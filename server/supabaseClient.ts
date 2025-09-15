@@ -1,3 +1,7 @@
+import { loadEnv } from './loadEnv.js';
+
+loadEnv();
+
 const readEnvironmentVariable = (key: string): string | undefined => {
   const value = process.env[key];
   if (typeof value === 'string') {
