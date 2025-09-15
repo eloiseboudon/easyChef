@@ -47,7 +47,7 @@ Créez un fichier `.env` à la racine avec les variables suivantes :
 ```env
 # Adresse du projet Supabase (ex. https://xyzcompany.supabase.co)
 SUPABASE_URL=
-
+easychef123pass
 # Utilisez de préférence la clé de rôle de service pour permettre l'écriture et la lecture.
 SUPABASE_SERVICE_ROLE_KEY=
 # Facultatif : clé anonyme si vous n'avez pas accès à la clé de service.
