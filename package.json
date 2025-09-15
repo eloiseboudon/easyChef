@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "client": "vite",
-    "server": "tsx watch server/index.ts",
-    "server:start": "tsx server/index.ts",
+    "server": "npm exec -- tsx watch server/index.ts",
+    "server:start": "npm exec -- tsx server/index.ts",
     "build": "tsc -b && tsc -p tsconfig.server.json",
     "preview": "vite preview"
   },

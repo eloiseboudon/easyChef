@@ -35,13 +35,27 @@ const startService = (name, script) => {
       return;
     }
 
-    if (typeof code === 'number' && code === 0) {
-      log(`${name} s'est arrêté.`);
-      void shutdown(0);
-    } else {
-      console.error(`[dev] ${name} s'est terminé avec le code ${code ?? 'inconnu'}.`);
-      void shutdown(typeof code === 'number' ? code : 1);
+    if (typeof code === 'number') {
+      if (code === 0) {
+        log(`${name} s'est arrêté.`);
+        void shutdown(0);
+        return;
+      }
+
+      if (code === 127) {
+        console.error(
+          `[dev] ${name} ne s'est pas lancé car la commande demandée est introuvable. Assurez-vous que les dépendances sont installées (npm install) ou que les scripts référencés existent.`
+        );
+      } else {
+        console.error(`[dev] ${name} s'est terminé avec le code ${code}.`);
+      }
+
+      void shutdown(code);
+      return;
     }
+
+    console.error(`[dev] ${name} s'est terminé avec le code ${code ?? 'inconnu'}.`);
+    void shutdown(1);
   });
 };
 
