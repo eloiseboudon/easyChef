@@ -598,7 +598,7 @@ const AddRecipeScreen = ({ onSave, onCancel, isOffline }: AddRecipeScreenProps) 
             </div>
           ))}
           <button type="button" className="add-btn" onClick={handleAddIngredient}>
-            <span>➕</span>
+            <span aria-hidden="true">+</span>
             <span>Ajouter un ingrédient</span>
           </button>
         </div>

@@ -106,10 +106,12 @@ button {
   border-radius: 50%;
   background: #ff6b35;
   color: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   font-weight: 700;
+  font-size: 18px;
+  line-height: 1;
+  flex: 0 0 48px;
 }
 
 .profile-name {
@@ -686,10 +688,12 @@ button {
   height: 36px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.28);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   font-weight: 700;
+  line-height: 1;
+  font-size: 14px;
+  flex: 0 0 36px;
 }
 
 .info-label {
@@ -806,11 +810,15 @@ button {
   border-radius: 50%;
   background: #ff6b35;
   color: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   font-weight: 700;
+  font-size: 16px;
+  line-height: 1;
+  text-align: center;
   box-shadow: 0 12px 24px rgba(255, 107, 53, 0.4);
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 36px;
 }
 
 .step-text {
