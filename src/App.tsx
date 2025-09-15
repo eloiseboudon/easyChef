@@ -389,9 +389,9 @@ const AddRecipeScreen = ({ onSave, onCancel, isOffline }: AddRecipeScreenProps) 
       previous.map((ingredient) =>
         ingredient.id === id
           ? {
-              ...ingredient,
-              [field]: value
-            }
+            ...ingredient,
+            [field]: value
+          }
           : ingredient
       )
     );
@@ -876,9 +876,9 @@ const App = () => {
       previous.map((recipe) =>
         recipe.id === id
           ? {
-              ...recipe,
-              isFavorite: !recipe.isFavorite
-            }
+            ...recipe,
+            isFavorite: !recipe.isFavorite
+          }
           : recipe
       )
     );
@@ -905,9 +905,9 @@ const App = () => {
         previous.map((recipe) =>
           recipe.id === id
             ? {
-                ...recipe,
-                isFavorite: existingRecipe.isFavorite
-              }
+              ...recipe,
+              isFavorite: existingRecipe.isFavorite
+            }
             : recipe
         )
       );
