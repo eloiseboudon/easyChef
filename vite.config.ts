@@ -33,5 +33,13 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,svg,png,ico}']
       }
     })
-  ]
+  ],
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:4000',
+        changeOrigin: true
+      }
+    }
+  }
 });

@@ -1,6 +1,7 @@
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useState } from 'react';
 
-type Screen = 'home' | 'add' | 'recipe';
+type View = 'home' | 'add' | 'recipe';
+type SubscriptionPlan = 'free' | 'premium';
 
 interface Ingredient {
   id: string;
@@ -11,6 +12,7 @@ interface Ingredient {
 
 interface Recipe {
   id: string;
+  ownerId: string;
   title: string;
   description?: string;
   servings: number;
@@ -22,6 +24,8 @@ interface Recipe {
   sharedCount: number;
   ingredients: Ingredient[];
   steps: string[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface RecipeFormData {
@@ -35,9 +39,26 @@ interface RecipeFormData {
   difficulty?: string;
 }
 
+interface User {
+  id: string;
+  email: string;
+  fullName: string;
+  plan: SubscriptionPlan;
+  createdAt: string;
+}
+
+const fallbackUser: User = {
+  id: 'user-marie',
+  email: 'marie@example.com',
+  fullName: 'Marie Dupont',
+  plan: 'premium',
+  createdAt: '2024-01-15T10:00:00.000Z'
+};
+
 const initialRecipes: Recipe[] = [
   {
     id: 'lasagnes',
+    ownerId: fallbackUser.id,
     title: 'Lasagnes maison',
     description:
       'Des lasagnes traditionnelles faites maison avec une sauce tomate mijotée et une béchamel onctueuse.',
@@ -62,10 +83,13 @@ const initialRecipes: Recipe[] = [
       'Ajouter la sauce tomate à la viande et laisser mijoter 15 minutes.',
       'Dans un plat à gratin, alterner couches de pâtes, viande et béchamel. Terminer par le fromage.',
       'Enfourner 25-30 minutes jusqu’à ce que le dessus soit doré. Laisser reposer 5 minutes avant de servir.'
-    ]
+    ],
+    createdAt: '2024-02-12T10:15:00.000Z',
+    updatedAt: '2024-03-02T09:30:00.000Z'
   },
   {
     id: 'tarte-pommes',
+    ownerId: fallbackUser.id,
     title: 'Tarte aux pommes',
     description: 'Une tarte aux pommes fondante parfumée à la cannelle, parfaite pour le goûter.',
     servings: 8,
@@ -87,10 +111,13 @@ const initialRecipes: Recipe[] = [
       'Éplucher les pommes, les couper en lamelles et les disposer sur la pâte.',
       'Saupoudrer de sucre et de cannelle. Parsemer de petits morceaux de beurre.',
       'Cuire 35 minutes jusqu’à obtenir une belle coloration dorée.'
-    ]
+    ],
+    createdAt: '2024-01-08T15:20:00.000Z',
+    updatedAt: '2024-02-22T18:45:00.000Z'
   },
   {
     id: 'salade-cesar',
+    ownerId: fallbackUser.id,
     title: 'Salade César',
     description: 'Une salade César rapide avec sa sauce maison et des croûtons croustillants.',
     servings: 4,
@@ -104,7 +131,7 @@ const initialRecipes: Recipe[] = [
       { id: 'cesar-laitue', name: 'Laitue romaine', quantity: 1, unit: 'unité' },
       { id: 'cesar-poulet', name: 'Blancs de poulet', quantity: 2, unit: 'unité(s)' },
       { id: 'cesar-parmesan', name: 'Parmesan', quantity: 60, unit: 'g' },
-      { id: 'cesar-croûtons', name: 'Croûtons', quantity: 80, unit: 'g' },
+      { id: 'cesar-croutons', name: 'Croûtons', quantity: 80, unit: 'g' },
       { id: 'cesar-sauce', name: 'Sauce César', quantity: 120, unit: 'ml' }
     ],
     steps: [
@@ -112,17 +139,61 @@ const initialRecipes: Recipe[] = [
       'Préparer la sauce César en mélangeant mayonnaise, ail, parmesan et jus de citron.',
       'Mélanger la laitue, le poulet, les croûtons et napper de sauce.',
       'Servir avec des copeaux de parmesan.'
-    ]
+    ],
+    createdAt: '2024-03-10T08:10:00.000Z',
+    updatedAt: '2024-03-10T08:10:00.000Z'
   }
 ];
+
+const units = ['g', 'ml', 'c.à.s', 'c.à.c', 'unité(s)'];
+
+const formatQuantity = (quantity: number) => {
+  if (Number.isInteger(quantity)) {
+    return quantity.toString();
+  }
+  return quantity.toFixed(1).replace('.', ',');
+};
+
+const getInitials = (fullName: string) => {
+  return fullName
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part[0]?.toUpperCase())
+    .join('')
+    .slice(0, 2);
+};
+
+const getFirstName = (fullName: string) => fullName.split(' ')[0] ?? fullName;
+
+const formatDate = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleDateString('fr-FR', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  });
+};
 
 interface HomeScreenProps {
   recipes: Recipe[];
   onRecipeSelect: (id: string) => void;
   onToggleFavorite: (id: string) => void;
+  loading: boolean;
+  isOffline: boolean;
+  userName: string;
 }
 
-const HomeScreen = ({ recipes, onRecipeSelect, onToggleFavorite }: HomeScreenProps) => {
+const HomeScreen = ({
+  recipes,
+  onRecipeSelect,
+  onToggleFavorite,
+  loading,
+  isOffline,
+  userName
+}: HomeScreenProps) => {
   const [searchTerm, setSearchTerm] = useState('');
 
   const stats = useMemo(() => {
@@ -137,6 +208,7 @@ const HomeScreen = ({ recipes, onRecipeSelect, onToggleFavorite }: HomeScreenPro
 
   const filteredRecipes = useMemo(() => {
     const normalizedTerm = searchTerm.trim().toLowerCase();
+
     if (!normalizedTerm) {
       return recipes;
     }
@@ -151,10 +223,12 @@ const HomeScreen = ({ recipes, onRecipeSelect, onToggleFavorite }: HomeScreenPro
     });
   }, [recipes, searchTerm]);
 
+  const hasNoResults = !loading && filteredRecipes.length === 0;
+
   return (
-    <div className="content-body">
+    <div className="view">
       <div className="home-header">
-        <div className="greeting">Bonjour Marie ! 👋</div>
+        <div className="greeting">Bonjour {userName} ! 👋</div>
         <div className="subtitle">Que cuisinez-vous aujourd'hui ?</div>
       </div>
 
@@ -187,83 +261,90 @@ const HomeScreen = ({ recipes, onRecipeSelect, onToggleFavorite }: HomeScreenPro
         </div>
       </div>
 
+      {isOffline && (
+        <div className="inline-alert">
+          Mode hors ligne : les nouvelles recettes seront enregistrées localement.
+        </div>
+      )}
+
       <div className="section-header">
         <div className="section-title">Mes recettes récentes</div>
-        <button
-          type="button"
-          className="see-all"
-          onClick={() => setSearchTerm('')}
-        >
+        <button type="button" className="see-all" onClick={() => setSearchTerm('')}>
           Voir tout
         </button>
       </div>
 
-      <div className="recipe-list">
-        {filteredRecipes.map((recipe) => (
-          <div
-            className="recipe-card"
-            key={recipe.id}
-            onClick={() => onRecipeSelect(recipe.id)}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                onRecipeSelect(recipe.id);
-              }
-            }}
-          >
-            <button
-              className="favorite-btn"
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onToggleFavorite(recipe.id);
+      {loading ? (
+        <div className="loading-state">
+          <div className="loading-card" />
+          <div className="loading-card" />
+          <div className="loading-card" />
+        </div>
+      ) : hasNoResults ? (
+        <div className="empty-state">Aucune recette ne correspond à votre recherche.</div>
+      ) : (
+        <div className="recipe-grid">
+          {filteredRecipes.map((recipe) => (
+            <article
+              className="recipe-card"
+              key={recipe.id}
+              onClick={() => onRecipeSelect(recipe.id)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event: KeyboardEvent<HTMLElement>) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onRecipeSelect(recipe.id);
+                }
               }}
             >
-              {recipe.isFavorite ? '❤️' : '🤍'}
-            </button>
-            <div className="recipe-title">{recipe.title}</div>
-            <div className="recipe-meta">
-              <div className="meta-item">
-                <svg className="meta-icon" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                </svg>
-                <span>
-                  {recipe.servings} {recipe.servings > 1 ? 'personnes' : 'personne'}
-                </span>
+              <button
+                className="favorite-btn"
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleFavorite(recipe.id);
+                }}
+              >
+                {recipe.isFavorite ? '❤️' : '🤍'}
+              </button>
+              <div className="recipe-title">{recipe.title}</div>
+              <div className="recipe-meta">
+                <div className="meta-item">
+                  <svg className="meta-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                  </svg>
+                  <span>
+                    {recipe.servings} {recipe.servings > 1 ? 'personnes' : 'personne'}
+                  </span>
+                </div>
+                <div className="meta-item">
+                  <svg className="meta-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="12,6 12,12 16,14" />
+                  </svg>
+                  <span>{recipe.time ?? '--'}</span>
+                </div>
               </div>
-              <div className="meta-item">
-                <svg className="meta-icon" viewBox="0 0 24 24" fill="currentColor">
-                  <circle cx="12" cy="12" r="10" />
-                  <polyline points="12,6 12,12 16,14" />
-                </svg>
-                <span>{recipe.time ?? '--'}</span>
+              <div className="recipe-tags">
+                {recipe.tags.map((tag) => (
+                  <span key={`${recipe.id}-${tag}`} className="tag">
+                    {tag}
+                  </span>
+                ))}
               </div>
-            </div>
-            <div className="recipe-tags">
-              {recipe.tags.map((tag) => (
-                <span key={`${recipe.id}-${tag}`} className="tag">
-                  {tag}
-                </span>
-              ))}
-            </div>
-          </div>
-        ))}
-
-        {filteredRecipes.length === 0 && (
-          <div className="empty-state">
-            Aucune recette ne correspond à votre recherche.
-          </div>
-        )}
-      </div>
+            </article>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
 
 interface AddRecipeScreenProps {
-  onSave: (recipe: RecipeFormData) => void;
+  onSave: (recipe: RecipeFormData) => Promise<void> | void;
   onCancel: () => void;
+  isOffline: boolean;
 }
 
 interface IngredientDraft {
@@ -273,9 +354,7 @@ interface IngredientDraft {
   name: string;
 }
 
-const units = ['g', 'ml', 'c.à.s', 'c.à.c', 'unité(s)'];
-
-const AddRecipeScreen = ({ onSave, onCancel }: AddRecipeScreenProps) => {
+const AddRecipeScreen = ({ onSave, onCancel, isOffline }: AddRecipeScreenProps) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [servings, setServings] = useState(6);
@@ -283,6 +362,7 @@ const AddRecipeScreen = ({ onSave, onCancel }: AddRecipeScreenProps) => {
   const [time, setTime] = useState('');
   const [difficulty, setDifficulty] = useState('');
   const [stepsText, setStepsText] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [ingredients, setIngredients] = useState<IngredientDraft[]>([
     { id: 'ingredient-0', quantity: '250', unit: 'g', name: 'Farine' },
     { id: 'ingredient-1', quantity: '3', unit: 'unité(s)', name: 'Œufs' }
@@ -300,7 +380,11 @@ const AddRecipeScreen = ({ onSave, onCancel }: AddRecipeScreenProps) => {
     ]);
   };
 
-  const handleIngredientChange = (id: string, field: keyof Omit<IngredientDraft, 'id'>, value: string) => {
+  const handleIngredientChange = (
+    id: string,
+    field: keyof Omit<IngredientDraft, 'id'>,
+    value: string
+  ) => {
     setIngredients((previous) =>
       previous.map((ingredient) =>
         ingredient.id === id
@@ -317,7 +401,7 @@ const AddRecipeScreen = ({ onSave, onCancel }: AddRecipeScreenProps) => {
     setIngredients((previous) => previous.filter((ingredient) => ingredient.id !== id));
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     const trimmedTitle = title.trim();
@@ -338,7 +422,9 @@ const AddRecipeScreen = ({ onSave, onCancel }: AddRecipeScreenProps) => {
       .filter(Boolean);
 
     if (!trimmedTitle || !parsedServings || parsedIngredients.length === 0 || parsedSteps.length === 0) {
-      window.alert('Merci de renseigner au minimum un titre, le nombre de parts, des ingrédients et des étapes.');
+      window.alert(
+        'Merci de renseigner au minimum un titre, le nombre de parts, des ingrédients et des étapes.'
+      );
       return;
     }
 
@@ -347,29 +433,42 @@ const AddRecipeScreen = ({ onSave, onCancel }: AddRecipeScreenProps) => {
       .map((tag) => tag.trim())
       .filter(Boolean);
 
-    onSave({
-      title: trimmedTitle,
-      description: description.trim() || undefined,
-      servings: parsedServings,
-      tags: parsedTags,
-      ingredients: parsedIngredients,
-      steps: parsedSteps,
-      time: time.trim() || undefined,
-      difficulty: difficulty.trim() || undefined
-    });
+    setIsSubmitting(true);
+    try {
+      await Promise.resolve(
+        onSave({
+          title: trimmedTitle,
+          description: description.trim() || undefined,
+          servings: parsedServings,
+          tags: parsedTags,
+          ingredients: parsedIngredients,
+          steps: parsedSteps,
+          time: time.trim() || undefined,
+          difficulty: difficulty.trim() || undefined
+        })
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
-    <form className="form-content" onSubmit={handleSubmit}>
+    <form className="view form-content" onSubmit={handleSubmit}>
       <div className="form-header">
         <button type="button" className="cancel-btn" onClick={onCancel}>
           Annuler
         </button>
         <div className="form-title">Nouvelle recette</div>
-        <button type="submit" className="save-btn">
-          Sauvegarder
+        <button type="submit" className="save-btn" disabled={isSubmitting}>
+          {isSubmitting ? 'Sauvegarde...' : 'Sauvegarder'}
         </button>
       </div>
+
+      {isOffline && (
+        <div className="inline-alert info">
+          Vous êtes hors ligne : la recette sera enregistrée sur cet appareil.
+        </div>
+      )}
 
       <div className="form-section">
         <div className="form-group">
@@ -461,16 +560,14 @@ const AddRecipeScreen = ({ onSave, onCancel }: AddRecipeScreenProps) => {
         <div className="ingredients-section">
           <div className="form-label">Ingrédients *</div>
           {ingredients.map((ingredient) => (
-            <div key={ingredient.id} className="ingredient-item">
+            <div className="ingredient-item" key={ingredient.id}>
               <input
                 type="number"
-                min="0"
                 className="form-input ingredient-qty"
-                placeholder="100"
+                placeholder="250"
                 value={ingredient.quantity}
-                onChange={(event) =>
-                  handleIngredientChange(ingredient.id, 'quantity', event.target.value)
-                }
+                onChange={(event) => handleIngredientChange(ingredient.id, 'quantity', event.target.value)}
+                min={0}
               />
               <select
                 className="form-input ingredient-unit"
@@ -493,8 +590,8 @@ const AddRecipeScreen = ({ onSave, onCancel }: AddRecipeScreenProps) => {
               <button
                 type="button"
                 className="remove-ingredient"
-                onClick={() => handleRemoveIngredient(ingredient.id)}
                 aria-label="Supprimer l'ingrédient"
+                onClick={() => handleRemoveIngredient(ingredient.id)}
               >
                 ✕
               </button>
@@ -531,21 +628,18 @@ interface RecipeScreenProps {
   onDecreaseServings: () => void;
   onIncreaseServings: () => void;
   onToggleFavorite: (id: string) => void;
+  author?: User;
+  isOffline: boolean;
 }
-
-const formatQuantity = (quantity: number) => {
-  if (Number.isInteger(quantity)) {
-    return quantity.toString();
-  }
-  return quantity.toFixed(1).replace('.', ',');
-};
 
 const RecipeScreen = ({
   recipe,
   servings,
   onDecreaseServings,
   onIncreaseServings,
-  onToggleFavorite
+  onToggleFavorite,
+  author,
+  isOffline
 }: RecipeScreenProps) => {
   const ratio = servings / (recipe.servings || 1);
 
@@ -554,8 +648,10 @@ const RecipeScreen = ({
     quantity: Math.max(Math.round(ingredient.quantity * ratio * 10) / 10, 0)
   }));
 
+  const lastUpdatedLabel = formatDate(recipe.updatedAt);
+
   return (
-    <div className="content-body">
+    <div className="view recipe-view">
       <div className="recipe-header">
         <div className="recipe-actions">
           <button
@@ -592,8 +688,39 @@ const RecipeScreen = ({
               <span>{recipe.difficulty}</span>
             </div>
           )}
+          <div className="info-item">
+            <svg className="info-icon" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm0 4h10" />
+              <path d="M9 10h6M9 14h4" />
+            </svg>
+            <span>Mis à jour le {lastUpdatedLabel}</span>
+          </div>
+          {author && (
+            <div className="info-item author">
+              <div className="author-avatar">{getInitials(author.fullName)}</div>
+              <div>
+                <div className="info-label">Proposée par</div>
+                <div className="info-value">{author.fullName}</div>
+              </div>
+            </div>
+          )}
         </div>
+        {recipe.tags.length > 0 && (
+          <div className="recipe-tags recipe-tags-inline">
+            {recipe.tags.map((tag) => (
+              <span key={`${recipe.id}-view-${tag}`} className="tag">
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
+
+      {isOffline && (
+        <div className="inline-alert info recipe-inline-alert">
+          Mode hors ligne : les favoris sont synchronisés localement.
+        </div>
+      )}
 
       <div className="serving-adjuster">
         <div className="adjuster-title">Ajuster les portions</div>
@@ -610,37 +737,105 @@ const RecipeScreen = ({
         </div>
       </div>
 
-      <div className="ingredients-list">
-        <div className="list-title">Ingrédients</div>
-        {adjustedIngredients.map((ingredient) => (
-          <div key={ingredient.id} className="ingredient-line">
-            <span>{ingredient.name}</span>
-            <strong>
-              {formatQuantity(ingredient.quantity)} {ingredient.unit}
-            </strong>
-          </div>
-        ))}
-      </div>
+      <div className="recipe-sections">
+        <div className="ingredients-list">
+          <div className="list-title">Ingrédients</div>
+          {adjustedIngredients.map((ingredient) => (
+            <div key={ingredient.id} className="ingredient-line">
+              <span>{ingredient.name}</span>
+              <strong>
+                {formatQuantity(ingredient.quantity)} {ingredient.unit}
+              </strong>
+            </div>
+          ))}
+        </div>
 
-      <div className="steps-list">
-        <div className="list-title">Préparation</div>
-        {recipe.steps.map((step, index) => (
-          <div key={`${recipe.id}-step-${index}`} className="step-item">
-            <div className="step-number">{index + 1}</div>
-            <div className="step-text">{step}</div>
-          </div>
-        ))}
+        <div className="steps-list">
+          <div className="list-title">Préparation</div>
+          {recipe.steps.map((step, index) => (
+            <div key={`${recipe.id}-step-${index}`} className="step-item">
+              <div className="step-number">{index + 1}</div>
+              <div className="step-text">{step}</div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
 };
 
 const App = () => {
-  const [recipes, setRecipes] = useState<Recipe[]>(initialRecipes);
-  const [activeScreen, setActiveScreen] = useState<Screen>('home');
-  const [selectedRecipeId, setSelectedRecipeId] = useState<string>(initialRecipes[0]?.id ?? '');
-  const [servings, setServings] = useState(initialRecipes[0]?.servings ?? 1);
-  const [addFormKey, setAddFormKey] = useState(0);
+  const [view, setView] = useState<View>('home');
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [activeUserId, setActiveUserId] = useState<string>(fallbackUser.id);
+  const [selectedRecipeId, setSelectedRecipeId] = useState<string>('');
+  const [servings, setServings] = useState<number>(1);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isBackendAvailable, setIsBackendAvailable] = useState<boolean>(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [addFormKey, setAddFormKey] = useState<number>(0);
+
+  const applyFallbackData = () => {
+    setUsers([fallbackUser]);
+    setActiveUserId(fallbackUser.id);
+    setRecipes(initialRecipes);
+    const fallbackRecipe = initialRecipes[0];
+    setSelectedRecipeId(fallbackRecipe?.id ?? '');
+    setServings(fallbackRecipe?.servings ?? 1);
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadData = async () => {
+      try {
+        const [usersResponse, recipesResponse] = await Promise.all([
+          fetch('/api/users'),
+          fetch('/api/recipes')
+        ]);
+
+        if (!usersResponse.ok || !recipesResponse.ok) {
+          throw new Error('Réponse inattendue du serveur.');
+        }
+
+        const usersPayload = await usersResponse.json();
+        const recipesPayload = await recipesResponse.json();
+
+        if (!isMounted) {
+          return;
+        }
+
+        const fetchedUsers: User[] = Array.isArray(usersPayload.users) ? usersPayload.users : [];
+        const fetchedRecipes: Recipe[] = Array.isArray(recipesPayload.recipes)
+          ? recipesPayload.recipes
+          : [];
+
+        setUsers(fetchedUsers.length > 0 ? fetchedUsers : [fallbackUser]);
+        setActiveUserId(fetchedUsers[0]?.id ?? fallbackUser.id);
+        setRecipes(fetchedRecipes);
+        setSelectedRecipeId(fetchedRecipes[0]?.id ?? '');
+        setServings(fetchedRecipes[0]?.servings ?? 1);
+        setIsBackendAvailable(true);
+        setStatusMessage(null);
+      } catch (error) {
+        console.error('Impossible de charger les données depuis le serveur', error);
+        setIsBackendAvailable(false);
+        setStatusMessage("Mode hors ligne : les données sont chargées depuis un jeu d'essai local.");
+        applyFallbackData();
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const selectedRecipe = useMemo(
     () => recipes.find((recipe) => recipe.id === selectedRecipeId) ?? recipes[0],
@@ -653,12 +848,30 @@ const App = () => {
     }
   }, [selectedRecipe?.id, selectedRecipe?.servings]);
 
+  const activeUser = useMemo(
+    () => users.find((user) => user.id === activeUserId) ?? users[0] ?? fallbackUser,
+    [users, activeUserId]
+  );
+
+  const recipeAuthor = useMemo(
+    () => (selectedRecipe ? users.find((user) => user.id === selectedRecipe.ownerId) : undefined),
+    [selectedRecipe, users]
+  );
+
+  const userFirstName = getFirstName(activeUser.fullName);
+
   const handleSelectRecipe = (id: string) => {
     setSelectedRecipeId(id);
-    setActiveScreen('recipe');
+    setView('recipe');
   };
 
-  const handleToggleFavorite = (id: string) => {
+  const handleToggleFavorite = async (id: string) => {
+    const existingRecipe = recipes.find((recipe) => recipe.id === id);
+
+    if (!existingRecipe) {
+      return;
+    }
+
     setRecipes((previous) =>
       previous.map((recipe) =>
         recipe.id === id
@@ -669,11 +882,91 @@ const App = () => {
           : recipe
       )
     );
+
+    if (!isBackendAvailable) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/recipes/${id}/favorite`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ favorite: !existingRecipe.isFavorite })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Erreur API ${response.status}`);
+      }
+    } catch (error) {
+      console.error('Impossible de mettre à jour le statut favori sur le serveur', error);
+      setRecipes((previous) =>
+        previous.map((recipe) =>
+          recipe.id === id
+            ? {
+                ...recipe,
+                isFavorite: existingRecipe.isFavorite
+              }
+            : recipe
+        )
+      );
+      setStatusMessage('La connexion au serveur a été perdue : les favoris sont enregistrés localement.');
+      setIsBackendAvailable(false);
+    }
   };
 
-  const handleCreateRecipe = (data: RecipeFormData) => {
+  const handleCreateRecipe = async (data: RecipeFormData) => {
+    const ownerId = activeUser?.id ?? fallbackUser.id;
+
+    if (isBackendAvailable) {
+      try {
+        const response = await fetch('/api/recipes', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            ownerId,
+            title: data.title,
+            description: data.description,
+            servings: data.servings,
+            time: data.time,
+            difficulty: data.difficulty,
+            tags: data.tags,
+            steps: data.steps,
+            ingredients: data.ingredients.map((ingredient) => ({
+              name: ingredient.name,
+              quantity: ingredient.quantity,
+              unit: ingredient.unit
+            }))
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Erreur API ${response.status}`);
+        }
+
+        const createdRecipe: Recipe = await response.json();
+
+        setRecipes((previous) => [createdRecipe, ...previous]);
+        setSelectedRecipeId(createdRecipe.id);
+        setView('recipe');
+        setAddFormKey((value) => value + 1);
+        setServings(createdRecipe.servings);
+        setStatusMessage(null);
+        return;
+      } catch (error) {
+        console.error('Impossible de sauvegarder la recette côté serveur', error);
+        setStatusMessage("Impossible de contacter le serveur : la recette est enregistrée localement.");
+        setIsBackendAvailable(false);
+      }
+    }
+
+    const now = new Date().toISOString();
     const newRecipe: Recipe = {
-      id: `recipe-${Date.now()}`,
+      id: `local-${Date.now()}`,
+      ownerId,
       title: data.title,
       description: data.description,
       servings: data.servings,
@@ -683,21 +976,24 @@ const App = () => {
       category: data.tags[0],
       isFavorite: false,
       sharedCount: 0,
-      ingredients: data.ingredients.map((ingredient, index) => ({
-        ...ingredient,
-        id: `${ingredient.id}-${index}`
-      })),
-      steps: data.steps
+      ingredients: data.ingredients,
+      steps: data.steps,
+      createdAt: now,
+      updatedAt: now
     };
 
     setRecipes((previous) => [newRecipe, ...previous]);
+    if (!users.some((user) => user.id === ownerId)) {
+      setUsers((previous) => [{ ...fallbackUser, id: ownerId }, ...previous]);
+    }
     setSelectedRecipeId(newRecipe.id);
-    setActiveScreen('recipe');
+    setView('recipe');
     setAddFormKey((value) => value + 1);
+    setServings(newRecipe.servings);
   };
 
   const handleCancelForm = () => {
-    setActiveScreen('home');
+    setView('home');
     setAddFormKey((value) => value + 1);
   };
 
@@ -709,115 +1005,138 @@ const App = () => {
     setServings((current) => (current < 20 ? current + 1 : current));
   };
 
-  const navigate = (screen: Screen) => {
-    setActiveScreen(screen);
-    if (screen === 'home' && selectedRecipe) {
-      setServings(selectedRecipe.servings);
-    }
-  };
+  const headerTitle =
+    view === 'home'
+      ? 'Tableau de bord recettes'
+      : view === 'add'
+        ? 'Nouvelle recette'
+        : selectedRecipe
+          ? selectedRecipe.title
+          : 'Recette';
+
+  const headerSubtitle =
+    view === 'home'
+      ? 'Retrouvez vos dernières créations et vos favoris.'
+      : view === 'add'
+        ? 'Ajoutez vos ingrédients, étapes et tags en un clin d’œil.'
+        : 'Ajustez les portions et partagez la recette avec vos proches.';
+
+  const isOffline = !isBackendAvailable;
 
   return (
-    <div className="app-container">
-      <div className="device">
-        <div className="screen">
-          <div className="notch"></div>
-
-          <div className="status-bar">
-            <span>9:41</span>
-            <span>📶 📶 📶 100% 🔋</span>
-          </div>
-
-          <div className={`content ${activeScreen === 'home' ? 'active' : ''}`} id="home">
-            {activeScreen === 'home' && (
-              <HomeScreen
-                recipes={recipes}
-                onRecipeSelect={handleSelectRecipe}
-                onToggleFavorite={handleToggleFavorite}
-              />
-            )}
-          </div>
-
-          <div className={`content ${activeScreen === 'add' ? 'active' : ''}`} id="add">
-            {activeScreen === 'add' && (
-              <AddRecipeScreen key={addFormKey} onSave={handleCreateRecipe} onCancel={handleCancelForm} />
-            )}
-          </div>
-
-          <div className={`content ${activeScreen === 'recipe' ? 'active' : ''}`} id="recipe">
-            {activeScreen === 'recipe' && selectedRecipe && (
-              <RecipeScreen
-                recipe={selectedRecipe}
-                servings={servings}
-                onDecreaseServings={decreaseServings}
-                onIncreaseServings={increaseServings}
-                onToggleFavorite={handleToggleFavorite}
-              />
-            )}
-          </div>
-
-          <div className="bottom-nav">
-            <button
-              type="button"
-              className={`nav-item ${activeScreen === 'home' ? 'active' : ''}`}
-              onClick={() => navigate('home')}
-            >
-              <svg className="nav-icon" viewBox="0 0 24 24" fill="currentColor">
-                <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                <polyline points="9,22 9,12 15,12 15,22" />
-              </svg>
-              <span className="nav-text">Accueil</span>
-            </button>
-            <button
-              type="button"
-              className={`nav-item ${activeScreen === 'add' ? 'active' : ''}`}
-              onClick={() => navigate('add')}
-            >
-              <svg className="nav-icon" viewBox="0 0 24 24" fill="currentColor">
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="16" />
-                <line x1="8" y1="12" x2="16" y2="12" />
-              </svg>
-              <span className="nav-text">Ajouter</span>
-            </button>
-            <button type="button" className="nav-item" disabled>
-              <svg className="nav-icon" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7z" />
-              </svg>
-              <span className="nav-text">Favoris</span>
-            </button>
-            <button type="button" className="nav-item" disabled>
-              <svg className="nav-icon" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                <circle cx="12" cy="7" r="4" />
-              </svg>
-              <span className="nav-text">Profil</span>
-            </button>
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">🍳 EasyChef</div>
+        <nav className="nav-list">
+          <button
+            type="button"
+            className={`nav-link ${view === 'home' ? 'active' : ''}`}
+            onClick={() => setView('home')}
+          >
+            <svg className="nav-icon" viewBox="0 0 24 24" fill="currentColor">
+              <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9,22 9,12 15,12 15,22" />
+            </svg>
+            <span>Accueil</span>
+          </button>
+          <button
+            type="button"
+            className={`nav-link ${view === 'add' ? 'active' : ''}`}
+            onClick={() => {
+              setAddFormKey((value) => value + 1);
+              setView('add');
+            }}
+          >
+            <svg className="nav-icon" viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="16" />
+              <line x1="8" y1="12" x2="16" y2="12" />
+            </svg>
+            <span>Ajouter</span>
+          </button>
+          <button
+            type="button"
+            className={`nav-link ${view === 'recipe' ? 'active' : ''}`}
+            onClick={() => selectedRecipe && setView('recipe')}
+            disabled={!selectedRecipe}
+          >
+            <svg className="nav-icon" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7z" />
+            </svg>
+            <span>Favoris</span>
+          </button>
+        </nav>
+        <div className="profile-card">
+          <div className="profile-avatar">{getInitials(activeUser.fullName)}</div>
+          <div>
+            <div className="profile-name">{activeUser.fullName}</div>
+            <div className="profile-email">{activeUser.email}</div>
+            <div className="badge">{activeUser.plan === 'premium' ? 'Premium' : 'Gratuit'}</div>
           </div>
         </div>
-
-        <div className="screen-controls">
-          <button
-            type="button"
-            className={`control-btn ${activeScreen === 'home' ? 'active' : ''}`}
-            onClick={() => navigate('home')}
-          >
-            Accueil
-          </button>
-          <button
-            type="button"
-            className={`control-btn ${activeScreen === 'add' ? 'active' : ''}`}
-            onClick={() => navigate('add')}
-          >
-            Ajouter
-          </button>
-          <button
-            type="button"
-            className={`control-btn ${activeScreen === 'recipe' ? 'active' : ''}`}
-            onClick={() => navigate('recipe')}
-          >
-            Recette
-          </button>
-        </div>
+      </aside>
+      <div className="main-panel">
+        <header className="main-header">
+          <div>
+            <h1 className="main-title">{headerTitle}</h1>
+            <p className="main-subtitle">{headerSubtitle}</p>
+          </div>
+          <div className="header-actions">
+            {view !== 'add' && (
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => {
+                  setAddFormKey((value) => value + 1);
+                  setView('add');
+                }}
+              >
+                + Nouvelle recette
+              </button>
+            )}
+          </div>
+        </header>
+        {statusMessage && (
+          <div className="alert-banner">
+            <span>ℹ️</span>
+            <span>{statusMessage}</span>
+          </div>
+        )}
+        <main className="view-container">
+          {view === 'home' && (
+            <HomeScreen
+              recipes={recipes}
+              onRecipeSelect={handleSelectRecipe}
+              onToggleFavorite={handleToggleFavorite}
+              loading={isLoading}
+              isOffline={isOffline}
+              userName={userFirstName}
+            />
+          )}
+          {view === 'add' && (
+            <AddRecipeScreen
+              key={addFormKey}
+              onSave={handleCreateRecipe}
+              onCancel={handleCancelForm}
+              isOffline={isOffline}
+            />
+          )}
+          {view === 'recipe' && selectedRecipe ? (
+            <RecipeScreen
+              recipe={selectedRecipe}
+              servings={servings}
+              onDecreaseServings={decreaseServings}
+              onIncreaseServings={increaseServings}
+              onToggleFavorite={handleToggleFavorite}
+              author={recipeAuthor}
+              isOffline={isOffline}
+            />
+          ) : view === 'recipe' && !isLoading ? (
+            <div className="view">
+              <div className="empty-state">Sélectionnez une recette pour afficher ses détails.</div>
+            </div>
+          ) : null}
+        </main>
       </div>
     </div>
   );
