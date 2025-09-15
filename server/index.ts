@@ -112,8 +112,6 @@ const fallbackRecipes: Recipe[] = [
   }
 ];
 
-seedData([fallbackUser], fallbackRecipes);
-
 const app = express();
 const PORT = Number(process.env.PORT ?? 4000);
 
@@ -150,69 +148,91 @@ const toggleFavoriteSchema = z.object({
   favorite: z.boolean()
 });
 
+type AsyncRouteHandler = (
+  request: express.Request,
+  response: express.Response,
+  next: express.NextFunction
+) => Promise<void>;
+
+const asyncHandler = (handler: AsyncRouteHandler) =>
+  (request: express.Request, response: express.Response, next: express.NextFunction) => {
+    handler(request, response, next).catch(next);
+  };
+
 app.get('/api/health', (_request, response) => {
   response.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-app.get('/api/users', (_request, response) => {
-  response.json({ users: listUsers() });
-});
+app.get(
+  '/api/users',
+  asyncHandler(async (_request, response) => {
+    const users = await listUsers();
+    response.json({ users });
+  })
+);
 
-app.get('/api/users/:id', (request, response) => {
-  const user = findUserById(request.params.id);
+app.get(
+  '/api/users/:id',
+  asyncHandler(async (request, response) => {
+    const user = await findUserById(request.params.id);
 
-  if (!user) {
-    response.status(404).json({ message: 'Utilisateur introuvable.' });
-    return;
-  }
+    if (!user) {
+      response.status(404).json({ message: 'Utilisateur introuvable.' });
+      return;
+    }
 
-  response.json(user);
-});
+    response.json(user);
+  })
+);
 
-app.post('/api/users', (request, response, next) => {
-  try {
+app.post(
+  '/api/users',
+  asyncHandler(async (request, response) => {
     const payload = createUserSchema.parse(request.body);
-    const user = createUser(payload);
+    const user = await createUser(payload);
     response.status(201).json(user);
-  } catch (error) {
-    next(error);
-  }
-});
+  })
+);
 
-app.get('/api/recipes', (_request, response) => {
-  response.json({ recipes: listRecipes() });
-});
+app.get(
+  '/api/recipes',
+  asyncHandler(async (_request, response) => {
+    const recipes = await listRecipes();
+    response.json({ recipes });
+  })
+);
 
-app.get('/api/recipes/:id', (request, response) => {
-  const recipe = findRecipeById(request.params.id);
+app.get(
+  '/api/recipes/:id',
+  asyncHandler(async (request, response) => {
+    const recipe = await findRecipeById(request.params.id);
 
-  if (!recipe) {
-    response.status(404).json({ message: 'Recette introuvable.' });
-    return;
-  }
+    if (!recipe) {
+      response.status(404).json({ message: 'Recette introuvable.' });
+      return;
+    }
 
-  response.json(recipe);
-});
-
-app.post('/api/recipes', (request, response, next) => {
-  try {
-    const payload = createRecipeSchema.parse(request.body);
-    const recipe = createRecipe(payload);
-    response.status(201).json(recipe);
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.patch('/api/recipes/:id/favorite', (request, response, next) => {
-  try {
-    const payload = toggleFavoriteSchema.parse(request.body);
-    const recipe = updateRecipeFavorite(request.params.id, payload.favorite);
     response.json(recipe);
-  } catch (error) {
-    next(error);
-  }
-});
+  })
+);
+
+app.post(
+  '/api/recipes',
+  asyncHandler(async (request, response) => {
+    const payload = createRecipeSchema.parse(request.body);
+    const recipe = await createRecipe(payload);
+    response.status(201).json(recipe);
+  })
+);
+
+app.patch(
+  '/api/recipes/:id/favorite',
+  asyncHandler(async (request, response) => {
+    const payload = toggleFavoriteSchema.parse(request.body);
+    const recipe = await updateRecipeFavorite(request.params.id, payload.favorite);
+    response.json(recipe);
+  })
+);
 
 app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
   if (error instanceof ApiError) {
@@ -229,6 +249,15 @@ app.use((error: unknown, _request: express.Request, response: express.Response, 
   response.status(500).json({ message: 'Erreur interne du serveur.' });
 });
 
-app.listen(PORT, () => {
-  console.log(`EasyChef API disponible sur http://localhost:${PORT}`);
+const startServer = async () => {
+  await seedData([fallbackUser], fallbackRecipes);
+
+  app.listen(PORT, () => {
+    console.log(`EasyChef API disponible sur http://localhost:${PORT}`);
+  });
+};
+
+startServer().catch((error) => {
+  console.error("Impossible de démarrer le serveur EasyChef :", error);
+  process.exit(1);
 });
